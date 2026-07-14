@@ -14,8 +14,21 @@ const getEnv = (keyBase: string) => {
   return undefined;
 };
 
-// Firebase credentials loaded with multi-prefix fallback
-const firebaseConfig = {
+// Check runtime configuration saved in localStorage (from UI setup modal)
+const getCustomStoredConfig = () => {
+  try {
+    const saved = localStorage.getItem("vnr201_custom_firebase_config");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {}
+  return null;
+};
+
+const storedConfig = getCustomStoredConfig();
+
+// Firebase credentials loaded with multi-prefix fallback or localStorage runtime config
+const firebaseConfig = storedConfig && storedConfig.apiKey && storedConfig.projectId ? storedConfig : {
   apiKey: getEnv("FIREBASE_API_KEY") || getEnv("API_KEY"),
   authDomain: getEnv("FIREBASE_AUTH_DOMAIN") || getEnv("AUTH_DOMAIN"),
   projectId: getEnv("FIREBASE_PROJECT_ID") || getEnv("PROJECT_ID"),
@@ -51,4 +64,18 @@ try {
   console.error("❌ Firebase init failed. Falling back to offline mode:", error);
 }
 
-export { db, isFirebaseEnabled };
+export const saveCustomFirebaseConfig = (config: any) => {
+  if (!config || !config.apiKey || !config.projectId) {
+    localStorage.removeItem("vnr201_custom_firebase_config");
+  } else {
+    localStorage.setItem("vnr201_custom_firebase_config", JSON.stringify(config));
+  }
+  window.location.reload();
+};
+
+export const clearCustomFirebaseConfig = () => {
+  localStorage.removeItem("vnr201_custom_firebase_config");
+  window.location.reload();
+};
+
+export { db, isFirebaseEnabled, firebaseConfig };

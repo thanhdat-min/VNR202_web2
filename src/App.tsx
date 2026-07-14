@@ -37,11 +37,15 @@ import {
   Mail,
   Ticket,
   Download,
-  Upload
+  Upload,
+  Settings,
+  Key,
+  Database,
+  AlertCircle
 } from "lucide-react";
 import { MILESTONES, DRAG_ITEMS, QUIZ_QUESTIONS, COLLABORATIVE_TASKS, GALLERY_IMAGES, INITIAL_STORIES } from "./data";
 import { DragItem, GalleryImage, FamilyStory } from "./types";
-import { db, isFirebaseEnabled } from "./firebase";
+import { db, isFirebaseEnabled, firebaseConfig, saveCustomFirebaseConfig, clearCustomFirebaseConfig } from "./firebase";
 import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
 export default function App() {
@@ -50,6 +54,7 @@ export default function App() {
   const [travelYear, setTravelYear] = useState(2026);
   const [hasTraveled, setHasTraveled] = useState(false);
   const [activeTab, setActiveTab] = useState<"home" | "timeline" | "gallery" | "stories" | "interactive" | "report">("home");
+  const [showFirebaseModal, setShowFirebaseModal] = useState(false);
 
   // Family Stories state with LocalStorage persistence
   const [stories, setStories] = useState<FamilyStory[]>(() => {
@@ -2186,16 +2191,22 @@ export default function App() {
                     <Pin className="w-5 h-5 text-retro-red rotate-45" />
                     Ghim ký ức mới
                   </h3>
-                  <div title={isFirebaseEnabled ? "Đang đồng bộ theo thời gian thực (Realtime Cloud Firestore)" : "Đang lưu cục bộ trên máy (Offline LocalStorage)"} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border shadow-sm shrink-0">
+                  <div 
+                    onClick={() => setShowFirebaseModal(true)}
+                    title="Nhấn để thiết lập / kiểm tra cấu hình Firebase Cloud Firestore Realtime" 
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border shadow-sm shrink-0 cursor-pointer hover:scale-105 transition-all bg-retro-cream/80 hover:bg-white border-retro-charcoal/30"
+                  >
                     {isFirebaseEnabled ? (
                       <>
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                         <span className="text-emerald-700">🔥 Realtime active</span>
+                        <Settings className="w-3 h-3 text-emerald-700 ml-0.5" />
                       </>
                     ) : (
                       <>
-                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                        <span className="text-amber-700">💾 LocalStorage</span>
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span className="text-amber-700 font-extrabold">💾 LocalStorage</span>
+                        <Settings className="w-3.5 h-3.5 text-amber-700 ml-0.5" />
                       </>
                     )}
                   </div>
@@ -3161,6 +3172,161 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Firebase Runtime Setup Modal */}
+      <AnimatePresence>
+        {showFirebaseModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-retro-cream border-4 border-retro-charcoal rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-[8px_8px_0px_#1e1f22] relative max-h-[90vh] overflow-y-auto"
+            >
+              <button
+                onClick={() => setShowFirebaseModal(false)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-white border-2 border-retro-charcoal hover:bg-retro-red hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-4 border-b-2 border-retro-charcoal/20 pb-3">
+                <div className="p-3 bg-retro-red text-white rounded-2xl shadow-sm">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-display font-extrabold text-retro-charcoal uppercase leading-tight">
+                    Cấu Hình Firebase Realtime
+                  </h3>
+                  <p className="text-xs font-mono text-retro-gray">Đồng bộ Cloud Firestore giữa các học viên</p>
+                </div>
+              </div>
+
+              <div className="mb-5 p-3 rounded-xl border-2 border-retro-charcoal/20 bg-white/70 text-xs font-sans text-retro-charcoal flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-retro-red shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Trạng thái hiện tại: </span>
+                  {isFirebaseEnabled ? (
+                    <span className="text-emerald-700 font-bold">🔥 Đã kết nối Cloud Firestore Realtime</span>
+                  ) : (
+                    <span className="text-amber-700 font-bold">💾 Ngoại tuyến (LocalStorage)</span>
+                  )}
+                  <p className="mt-1 text-[11px] text-retro-gray leading-relaxed">
+                    Nếu trang Vercel chưa được cấu hình biến môi trường, bạn có thể điền <strong>API Key</strong> và <strong>Project ID</strong> của Firebase trực tiếp tại đây để kết nối thời gian thực ngay lập tức!
+                  </p>
+                </div>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.target as HTMLFormElement);
+                  const apiKey = (formData.get("apiKey") as string || "").trim();
+                  const projectId = (formData.get("projectId") as string || "").trim();
+                  const authDomain = (formData.get("authDomain") as string || "").trim() || `${projectId}.firebaseapp.com`;
+                  const storageBucket = (formData.get("storageBucket") as string || "").trim() || `${projectId}.appspot.com`;
+                  const appId = (formData.get("appId") as string || "").trim();
+
+                  if (!apiKey || !projectId) {
+                    alert("Vui lòng nhập ít nhất API Key và Project ID!");
+                    return;
+                  }
+
+                  saveCustomFirebaseConfig({
+                    apiKey,
+                    projectId,
+                    authDomain,
+                    storageBucket,
+                    appId
+                  });
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-xs font-mono font-bold text-retro-charcoal uppercase mb-1 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-retro-red" />
+                    Firebase API Key <span className="text-retro-red">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="apiKey"
+                    defaultValue={firebaseConfig.apiKey || ""}
+                    placeholder="AIzaSy..."
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-retro-charcoal bg-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-retro-red shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-bold text-retro-charcoal uppercase mb-1">
+                    Project ID <span className="text-retro-red">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="projectId"
+                    defaultValue={firebaseConfig.projectId || ""}
+                    placeholder="ví dụ: vnr201-family-stories"
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-retro-charcoal bg-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-retro-red shadow-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-mono font-bold text-retro-gray uppercase mb-1">
+                      Auth Domain (Tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      name="authDomain"
+                      defaultValue={firebaseConfig.authDomain || ""}
+                      placeholder="project.firebaseapp.com"
+                      className="w-full px-3 py-2 rounded-xl border border-retro-charcoal/40 bg-white/90 font-mono text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-mono font-bold text-retro-gray uppercase mb-1">
+                      App ID (Tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      name="appId"
+                      defaultValue={firebaseConfig.appId || ""}
+                      placeholder="1:123456:web:abc..."
+                      className="w-full px-3 py-2 rounded-xl border border-retro-charcoal/40 bg-white/90 font-mono text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 pt-3 border-t-2 border-retro-charcoal/20">
+                  <button
+                    type="submit"
+                    className="w-full sm:flex-1 py-3 px-4 bg-retro-red text-white font-display font-extrabold text-sm uppercase rounded-xl border-2 border-retro-charcoal shadow-[3px_3px_0px_#1e1f22] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[1px_1px_0px_#1e1f22] transition-all flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Lưu & Kết Nối Ngay
+                  </button>
+                  
+                  {isFirebaseEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => clearCustomFirebaseConfig()}
+                      className="w-full sm:w-auto py-3 px-4 bg-white text-retro-charcoal font-sans font-bold text-xs uppercase rounded-xl border-2 border-retro-charcoal hover:bg-gray-100 transition-all"
+                    >
+                      Xóa / Ngắt Kết Nối
+                    </button>
+                  )}
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}
