@@ -42,7 +42,7 @@ import {
 import { MILESTONES, DRAG_ITEMS, QUIZ_QUESTIONS, COLLABORATIVE_TASKS, GALLERY_IMAGES, INITIAL_STORIES } from "./data";
 import { DragItem, GalleryImage, FamilyStory } from "./types";
 import { db, isFirebaseEnabled } from "./firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
 export default function App() {
   // Theme & Layout state
@@ -69,10 +69,52 @@ export default function App() {
   // Ref to auto-scroll to corkboard after submit
   const corkboardRef = useRef<HTMLDivElement>(null);
 
-  // Save stories changes to local storage
+  // Save stories changes to local storage and broadcast across tabs for instant realtime sync
   useEffect(() => {
     localStorage.setItem("vnr201_family_stories", JSON.stringify(stories));
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        const channel = new BroadcastChannel("vnr201_family_stories_channel");
+        channel.postMessage({ type: "STORIES_UPDATED", stories });
+        channel.close();
+      } catch (err) {
+        // Ignore BroadcastChannel errors in unsupported environments
+      }
+    }
   }, [stories]);
+
+  // Cross-tab realtime synchronization for offline/LocalStorage fallback mode
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "vnr201_family_stories" && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setStories(parsed);
+          }
+        } catch (err) {
+          console.error("Storage sync error:", err);
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel("vnr201_family_stories_channel");
+      channel.onmessage = (event) => {
+        if (event.data && event.data.type === "STORIES_UPDATED" && Array.isArray(event.data.stories)) {
+          setStories(event.data.stories);
+        }
+      };
+    }
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      if (channel) channel.close();
+    };
+  }, []);
 
   // Firebase Firestore realtime synchronization
   useEffect(() => {
@@ -80,7 +122,8 @@ export default function App() {
 
     try {
       const q = query(collection(db, "stories"), orderBy("timestamp", "desc"));
-      const unsubscribe = onSnapshot(q, async (snapshot) => {
+      // Listen with includeMetadataChanges so optimistic local writes appear instantly without waiting for network
+      const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, async (snapshot) => {
         if (snapshot.empty) {
           // Firestore is empty! Seed with INITIAL_STORIES to provide sample data immediately
           console.log("Seeding empty Cloud Firestore collection 'stories'...");
@@ -97,7 +140,7 @@ export default function App() {
                 stamp: item.stamp || "default",
                 likes: item.likes,
                 date: item.date,
-                timestamp: new Date()
+                timestamp: serverTimestamp()
               });
             } catch (err) {
               console.error("Failed to seed story:", err);
@@ -106,11 +149,21 @@ export default function App() {
           return;
         }
 
-        const firebaseStories: FamilyStory[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
+        const firebaseStories: any[] = [];
+        snapshot.forEach((docSnap) => {
+          // Estimate serverTimestamps on pending optimistic writes so new posts don't have null timestamp
+          const data = docSnap.data({ serverTimestamps: "estimate" });
+          let timeMs = Date.now();
+          if (data.timestamp && typeof data.timestamp.toMillis === "function") {
+            timeMs = data.timestamp.toMillis();
+          } else if (data.timestamp instanceof Date) {
+            timeMs = data.timestamp.getTime();
+          } else if (typeof data.timestamp === "number") {
+            timeMs = data.timestamp;
+          }
+
           firebaseStories.push({
-            id: doc.id,
+            id: docSnap.id,
             author: data.author || "",
             relation: data.relation || "",
             title: data.title || "",
@@ -118,12 +171,21 @@ export default function App() {
             tag: data.tag || "🎫 Tem phiếu",
             color: data.color || "cream",
             stamp: data.stamp || "default",
-            likes: data.likes || 0,
+            likes: typeof data.likes === "number" ? data.likes : 0,
             date: data.date || new Date().toLocaleDateString("vi-VN"),
-            isCustom: true // Treat online stories as deletable in collaborative environments
+            isCustom: true,
+            _timeMs: timeMs
           });
         });
-        setStories(firebaseStories);
+
+        // Ensure strictly sorted descending by timestamp/timeMs so newly posted items stay at top
+        firebaseStories.sort((a, b) => (b._timeMs || 0) - (a._timeMs || 0));
+
+        setStories(prev => {
+          // Merge any unsynced local custom items that haven't appeared in Firestore yet
+          const localOnly = prev.filter(p => p.id.startsWith("custom-") && !firebaseStories.some(fs => fs.title === p.title && fs.author === p.author && fs.content === p.content));
+          return [...localOnly, ...firebaseStories];
+        });
       }, (error) => {
         console.error("Firestore subscription error:", error);
       });
@@ -239,16 +301,24 @@ export default function App() {
   };
 
   // Story handlers
-  const handleAddStory = (newStory: { author: string; relation: string; title: string; content: string; tag: any; color: any; stamp: any }) => {
+  const handleAddStory = async (newStory: { author: string; relation: string; title: string; content: string; tag: any; color: any; stamp: any }) => {
+    const cleanAuthor = (newStory.author || "").trim();
+    const cleanTitle = (newStory.title || "").trim();
+    const cleanContent = (newStory.content || "").trim();
+    const cleanRelation = newStory.relation || "Lời kể của Ông ngoại";
+    const cleanTag = newStory.tag || "🎫 Tem phiếu";
+    const cleanColor = newStory.color || "cream";
+    const cleanStamp = newStory.stamp || "default";
+
     // Always add to local state IMMEDIATELY for instant UI feedback
     const story: FamilyStory = {
-      author: newStory.author || "",
-      relation: newStory.relation || "",
-      title: newStory.title || "",
-      content: newStory.content || "",
-      tag: newStory.tag || "🎫 Tem phiếu",
-      color: newStory.color || "cream",
-      stamp: newStory.stamp || "default",
+      author: cleanAuthor,
+      relation: cleanRelation,
+      title: cleanTitle,
+      content: cleanContent,
+      tag: cleanTag,
+      color: cleanColor,
+      stamp: cleanStamp,
       id: "custom-" + Date.now(),
       likes: 0,
       date: new Date().toLocaleDateString("vi-VN"),
@@ -256,57 +326,61 @@ export default function App() {
     };
     setStories(prev => [story, ...prev]);
 
-    // Fire-and-forget to Firebase if enabled (does NOT block UI update)
+    // Send to Firebase immediately if enabled
     if (isFirebaseEnabled && db) {
-      addDoc(collection(db, "stories"), {
-        author: story.author,
-        relation: story.relation,
-        title: story.title,
-        content: story.content,
-        tag: story.tag,
-        color: story.color,
-        stamp: story.stamp,
-        likes: 0,
-        date: story.date,
-        timestamp: new Date()
-      }).catch(err => console.error("Firebase write failed:", err));
+      try {
+        await addDoc(collection(db, "stories"), {
+          author: cleanAuthor,
+          relation: cleanRelation,
+          title: cleanTitle,
+          content: cleanContent,
+          tag: cleanTag,
+          color: cleanColor,
+          stamp: cleanStamp,
+          likes: 0,
+          date: story.date,
+          timestamp: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Firebase write failed:", err);
+      }
     }
   };
 
   const handleLikeStory = async (id: string) => {
-    if (isFirebaseEnabled && db && !id.startsWith("custom-")) {
+    // Optimistically update UI first
+    setStories(prev => prev.map(s => {
+      if (s.id === id) {
+        return { ...s, likes: (s.likes || 0) + 1 };
+      }
+      return s;
+    }));
+
+    if (isFirebaseEnabled && db && !id.startsWith("custom-") && !id.startsWith("imported-")) {
       try {
         const storyRef = doc(db, "stories", id);
         const target = stories.find(s => s.id === id);
         if (target) {
           await updateDoc(storyRef, { likes: (target.likes || 0) + 1 });
-          return;
         }
       } catch (err) {
         console.error("Failed to like story in Firebase:", err);
       }
     }
-
-    setStories(prev => prev.map(s => {
-      if (s.id === id) {
-        return { ...s, likes: s.likes + 1 };
-      }
-      return s;
-    }));
   };
 
   const handleDeleteStory = async (id: string) => {
-    if (isFirebaseEnabled && db && !id.startsWith("custom-")) {
+    // Optimistically remove from local state immediately
+    setStories(prev => prev.filter(s => s.id !== id));
+
+    if (isFirebaseEnabled && db && !id.startsWith("custom-") && !id.startsWith("imported-")) {
       try {
         const storyRef = doc(db, "stories", id);
         await deleteDoc(storyRef);
-        return;
       } catch (err) {
         console.error("Failed to delete story from Firebase:", err);
       }
     }
-
-    setStories(prev => prev.filter(s => s.id !== id));
   };
 
   // Export custom stories as JSON file
@@ -2107,10 +2181,25 @@ export default function App() {
               
               {/* Form Side - 1 Column */}
               <div className="bg-white border-4 border-retro-charcoal rounded-2xl p-6 shadow-[5px_5px_0px_#1e1f22] sticky top-28">
-                <h3 className="text-lg md:text-xl font-display font-extrabold text-retro-charcoal uppercase mb-3 flex items-center gap-2">
-                  <Pin className="w-5 h-5 text-retro-red rotate-45" />
-                  Ghim ký ức mới
-                </h3>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h3 className="text-lg md:text-xl font-display font-extrabold text-retro-charcoal uppercase flex items-center gap-2">
+                    <Pin className="w-5 h-5 text-retro-red rotate-45" />
+                    Ghim ký ức mới
+                  </h3>
+                  <div title={isFirebaseEnabled ? "Đang đồng bộ theo thời gian thực (Realtime Cloud Firestore)" : "Đang lưu cục bộ trên máy (Offline LocalStorage)"} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border shadow-sm shrink-0">
+                    {isFirebaseEnabled ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span className="text-emerald-700">🔥 Realtime active</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <span className="text-amber-700">💾 LocalStorage</span>
+                      </>
+                    )}
+                  </div>
+                </div>
                 
                 <form key={storyFormKey} onSubmit={(e) => {
                   e.preventDefault();
