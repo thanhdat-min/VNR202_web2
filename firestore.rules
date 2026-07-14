@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Collection "stories" - Bảng Ký Ức Gia Đình
+    // Cho phép mọi người đọc và ghi (không cần đăng nhập)
+    // Phù hợp cho triển lãm lớp học, mọi học sinh đều ghim được
+    match /stories/{storyId} {
+      // Read: Mọi người đều xem được
+      allow read: if true;
+
+      // Write: Mọi người đều ghim được, có giới hạn nội dung
+      allow create: if
+        request.resource.data.author is string &&
+        request.resource.data.author.size() > 0 &&
+        request.resource.data.author.size() <= 100 &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.title.size() <= 200 &&
+        request.resource.data.content is string &&
+        request.resource.data.content.size() <= 2000;
+
+      // Update: Chỉ cho phép cập nhật trường "likes" (để nút tim hoạt động)
+      allow update: if
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']);
+
+      // Delete: Cho phép xóa (học sinh xóa bài của mình)
+      allow delete: if true;
+    }
+  }
+}

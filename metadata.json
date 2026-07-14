@@ -1,0 +1,6 @@
+{
+  "name": "Hành trình Đổi mới 1975 - 1986",
+  "description": "Ứng dụng tương tác tái hiện lịch sử xây dựng, đấu tranh bảo vệ tổ quốc và các đột phá tư duy kinh tế Việt Nam giai đoạn 1975 - 1986.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

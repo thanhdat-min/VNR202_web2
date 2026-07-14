@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-retro-cream: #FCF9F2;
+  --color-retro-red: #E03E3E;
+  --color-retro-red-dark: #B52A2A;
+  --color-retro-orange: #FF6B4A;
+  --color-retro-mint: #10B981;
+  --color-retro-mint-light: #E6F7F0;
+  --color-retro-yellow: #FBBF24;
+  --color-retro-yellow-light: #FEF9C3;
+  --color-retro-charcoal: #1E1F22;
+  --color-retro-gray: #4A4D55;
+  --color-retro-border: #E5E0D5;
+}
+
+/* Custom class for time machine travel ripple effects */
+@keyframes time-warp {
+  0% {
+    transform: scale(1);
+    filter: hue-rotate(0deg) blur(0px);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    filter: hue-rotate(180deg) blur(10px);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2);
+    filter: hue-rotate(360deg) blur(20px);
+    opacity: 0;
+  }
+}
+
+.animate-time-warp {
+  animation: time-warp 3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+body {
+  background-color: var(--color-retro-cream);
+  color: var(--color-retro-charcoal);
+  font-family: var(--font-sans);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-retro-cream);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-retro-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-retro-orange);
+}
+
+/* Retro CRT TV Scanline sweep animation */
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+.animate-scanline {
+  animation: scanline 8s linear infinite;
+}
+
