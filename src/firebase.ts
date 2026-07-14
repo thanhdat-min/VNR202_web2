@@ -27,15 +27,26 @@ const getCustomStoredConfig = () => {
 
 const storedConfig = getCustomStoredConfig();
 
-// Firebase credentials loaded with multi-prefix fallback or localStorage runtime config
+// Default fallback configuration for VNR201 Family Stories
+const DEFAULT_CONFIG = {
+  apiKey: "AIzaSyBGjHrL7_4CzVqgMSFeaSq723mPH2NJzS4",
+  authDomain: "vnr201-stories.firebaseapp.com",
+  projectId: "vnr201-stories",
+  storageBucket: "vnr201-stories.firebasestorage.app",
+  messagingSenderId: "1002423470845",
+  appId: "1:1002423470845:web:8235d67830a3219d0a4c94",
+  measurementId: "G-YLM2Z2H17E"
+};
+
+// Firebase credentials loaded with multi-prefix fallback, localStorage, or default project config
 const firebaseConfig = storedConfig && storedConfig.apiKey && storedConfig.projectId ? storedConfig : {
-  apiKey: getEnv("FIREBASE_API_KEY") || getEnv("API_KEY"),
-  authDomain: getEnv("FIREBASE_AUTH_DOMAIN") || getEnv("AUTH_DOMAIN"),
-  projectId: getEnv("FIREBASE_PROJECT_ID") || getEnv("PROJECT_ID"),
-  storageBucket: getEnv("FIREBASE_STORAGE_BUCKET") || getEnv("STORAGE_BUCKET"),
-  messagingSenderId: getEnv("FIREBASE_MESSAGING_SENDER_ID") || getEnv("MESSAGING_SENDER_ID"),
-  appId: getEnv("FIREBASE_APP_ID") || getEnv("APP_ID"),
-  measurementId: getEnv("FIREBASE_MEASUREMENT_ID") || getEnv("MEASUREMENT_ID")
+  apiKey: getEnv("FIREBASE_API_KEY") || getEnv("API_KEY") || DEFAULT_CONFIG.apiKey,
+  authDomain: getEnv("FIREBASE_AUTH_DOMAIN") || getEnv("AUTH_DOMAIN") || DEFAULT_CONFIG.authDomain,
+  projectId: getEnv("FIREBASE_PROJECT_ID") || getEnv("PROJECT_ID") || DEFAULT_CONFIG.projectId,
+  storageBucket: getEnv("FIREBASE_STORAGE_BUCKET") || getEnv("STORAGE_BUCKET") || DEFAULT_CONFIG.storageBucket,
+  messagingSenderId: getEnv("FIREBASE_MESSAGING_SENDER_ID") || getEnv("MESSAGING_SENDER_ID") || DEFAULT_CONFIG.messagingSenderId,
+  appId: getEnv("FIREBASE_APP_ID") || getEnv("APP_ID") || DEFAULT_CONFIG.appId,
+  measurementId: getEnv("FIREBASE_MEASUREMENT_ID") || getEnv("MEASUREMENT_ID") || DEFAULT_CONFIG.measurementId
 };
 
 let db: any = null;
